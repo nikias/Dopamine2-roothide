@@ -1,8 +1,6 @@
 name: "*** build tipa file ***"
 
 on:
-  schedule:
-    - cron: '0 */2 * * *' # every 2 hours
   workflow_dispatch:
 
 concurrency:
@@ -16,7 +14,7 @@ jobs:
       - name: Checkout
         run: |
           set -x
-          git clone --recursive https://github.com/roothide/Dopamine2-roothide ${{ github.workspace }}
+          git clone --recursive https://github.com/nikias/Dopamine2-roothide ${{ github.workspace }}
           
       - name: Install Procursus
         uses: dhinakg/procursus-action@main

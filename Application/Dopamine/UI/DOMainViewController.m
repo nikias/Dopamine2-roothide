@@ -26,16 +26,59 @@
 
 @end
 
+#define NOTI_TRIGGER_JB     CFSTR("Dopamine-roothide.triggerJB")
+#define NOTI_REMOVE_JB      CFSTR("Dopamine-roothide.removeJB")
+#define NOTI_IS_JBROKEN     CFSTR("Dopamine-roothide.isJailbroken")
+#define NOTI_READY          CFSTR("Dopamine-roothide.ready")
+#define NOTI_JAILBROKEN     CFSTR("Dopamine-roothide.jailbroken")
+#define NOTI_NOT_JAILBROKEN CFSTR("Dopamine-roothide.not-jailbroken")
+#define NOTI_ERROR_OCCURRED CFSTR("Dopamine-roothide.errorOccurred")
+
+static BOOL autoTrigger = NO;
+
+static void handle_notification(CFNotificationCenterRef center, void *observer, CFNotificationName name, const void *object, CFDictionaryRef userInfo)
+{
+    DOMainViewController* __self = (__bridge DOMainViewController*)observer;
+
+    if (CFEqual(name, NOTI_TRIGGER_JB)) {
+        if (![[DOEnvironmentManager sharedManager] isJailbroken]) {
+            autoTrigger = YES;
+            [__self.jailbreakBtn.button sendActionsForControlEvents:UIControlEventTouchUpInside];
+        } else {
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), NOTI_JAILBROKEN, NULL, NULL, YES);
+        }
+    } else if (CFEqual(name, NOTI_REMOVE_JB)) {
+        autoTrigger = YES;
+        // copied from -[DOSettingsController removeJailbreakPressed]
+        [[DOEnvironmentManager sharedManager] deleteBootstrap];
+        if ([DOEnvironmentManager sharedManager].isJailbroken) {
+            [[DOEnvironmentManager sharedManager] reboot];
+        }
+        else {
+            if (gSystemInfo.jailbreakInfo.rootPath) {
+                free(gSystemInfo.jailbreakInfo.rootPath);
+                gSystemInfo.jailbreakInfo.rootPath = NULL;
+                [[DOEnvironmentManager sharedManager] locateJailbreakRoot];
+            }
+        }
+    } else if (CFEqual(name, NOTI_IS_JBROKEN)) {
+        if ([[DOEnvironmentManager sharedManager] isJailbroken]) {
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), NOTI_JAILBROKEN, NULL, NULL, YES);
+        } else {
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), NOTI_NOT_JAILBROKEN, NULL, NULL, YES);
+        }
+    }
+}
+
 @implementation DOMainViewController
 
 - (void)viewDidLoad {
     [super viewDidLoad];
     [self setupStack];
-    if (![[DOEnvironmentManager sharedManager] isJailbroken]) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [self.jailbreakBtn.button sendActionsForControlEvents:UIControlEventTouchUpInside];
-        });
-    }
+    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (__bridge void*)self, handle_notification, NOTI_TRIGGER_JB, NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (__bridge void*)self, handle_notification, NOTI_REMOVE_JB, NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), (__bridge void*)self, handle_notification, NOTI_IS_JBROKEN, NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), NOTI_READY, NULL, NULL, YES);
 }
 
 -(void)setupStack
@@ -242,8 +285,15 @@
             if (error && showLogs) {
                 [[DOUIManager sharedInstance] sendLog:[NSString stringWithFormat:@"Jailbreak failed with error: %@", error] debug:NO];
                 [self.navigationController pushViewController:[[DOLogCrashViewController alloc] initWithTitle:[error localizedDescription]] animated:YES];
+                CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), NOTI_ERROR_OCCURRED, (__bridge CFStringRef)[error localizedDescription], NULL, YES);
+                NSLog(@"Jailbreak failed with error: %@", error);
             }
             else if (error && !showLogs) {
+              if (autoTrigger) {
+                CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), NOTI_ERROR_OCCURRED, (__bridge CFStringRef)[error localizedDescription], NULL, YES);
+                NSLog(@"Jailbreak failed with error: %@", [error localizedDescription]);
+                exec_cmd_trusted(JBROOT_PATH("/sbin/reboot"), NULL);
+              } else {
                 // Used when there is an error that is explainable in such detail that additional logs are not needed
                 UIAlertController *alertController = [UIAlertController alertControllerWithTitle:DOLocalizedString(@"Log_Error") message:[error localizedDescription] preferredStyle:UIAlertControllerStyleAlert];
                 UIAlertAction *rebootAction = [UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Reboot") style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
@@ -251,14 +301,19 @@
                 }];
                 [alertController addAction:rebootAction];
                 [self presentViewController:alertController animated:YES completion:nil];
+              }
             }
             else if (didRemove) {
+              if (autoTrigger) {
+                  exit(0);
+              } else {
                 UIAlertController *alertController = [UIAlertController alertControllerWithTitle:DOLocalizedString(@"Removed_Jailbreak_Alert_Title") message:DOLocalizedString(@"Removed_Jailbreak_Alert_Message") preferredStyle:UIAlertControllerStyleAlert];
                 UIAlertAction *rebootAction = [UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Close") style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
                     exit(0);
                 }];
                 [alertController addAction:rebootAction];
                 [self presentViewController:alertController animated:YES completion:nil];
+              }
             }
             else {
                 // No errors

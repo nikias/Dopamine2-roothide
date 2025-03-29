@@ -11,11 +11,7 @@ jobs:
   build:
     runs-on: macos-13
     steps:
-      - name: Checkout
-        run: |
-          set -x
-          git clone --recursive https://github.com/nikias/Dopamine2-roothide ${{ github.workspace }}
-          
+      - uses: actions/checkout@v4
       - name: Install Procursus
         uses: dhinakg/procursus-action@main
         with:
@@ -78,3 +74,9 @@ jobs:
           name: roothide-Dopamine2-v${{ env.tag }}.tipa
           path: |
             ${{ github.workspace }}/Application/roothide-Dopamine2-v${{ env.tag }}.tipa
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          fail_on_unmatched_files: true
+          files: ${{ github.workspace }}/Application/roothide-Dopamine2-v${{ env.tag }}.tipa

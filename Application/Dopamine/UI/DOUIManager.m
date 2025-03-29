@@ -303,6 +303,8 @@
 
 - (void)completeJailbreak
 {
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("Dopamine-roothide.completeJailbreak"), NULL, NULL, YES);
+    NSLog(@"Jailbreak complete");
     if (!self.logView)
         return;
 
